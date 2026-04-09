@@ -7,7 +7,6 @@ resource "google_project_service" "pam" {
 
 # ─── Entitlement: Break-glass BigQuery admin (1-hour max) ───────────────────
 resource "google_privileged_access_manager_entitlement" "bq_admin" {
-  provider             = google-beta
   entitlement_id       = "bq-admin-breakglass"
   location             = "global"
   parent               = "projects/${var.project_id}"
@@ -57,7 +56,6 @@ resource "google_privileged_access_manager_entitlement" "bq_admin" {
 
 # ─── Entitlement: GKE cluster admin (no approval, 30 min) ────────────────────
 resource "google_privileged_access_manager_entitlement" "gke_admin" {
-  provider             = google-beta
   entitlement_id       = "gke-cluster-admin-jit"
   location             = "global"
   parent               = "projects/${var.project_id}"
@@ -100,7 +98,6 @@ resource "google_privileged_access_manager_entitlement" "gke_admin" {
 
 # ─── Entitlement: Secret Manager accessor (requires justification) ────────────
 resource "google_privileged_access_manager_entitlement" "secret_accessor" {
-  provider             = google-beta
   entitlement_id       = "secret-accessor-jit"
   location             = "global"
   parent               = "projects/${var.project_id}"

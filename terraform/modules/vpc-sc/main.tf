@@ -1,142 +1,81 @@
-# Enable the PAM API
-resource "google_project_service" "pam" {
-  project = var.project_id
-  service = "privilegedaccessmanager.googleapis.com"
-  disable_on_destroy = false
+# ─── Access policy (org-level) ────────────────────────────────────────────────
+resource "google_access_context_manager_access_policy" "pam_policy" {
+  parent = "organizations/${var.org_id}"
+  title  = "PAM Access Policy"
 }
 
-# ─── Entitlement: Break-glass BigQuery admin (1-hour max) ───────────────────
-resource "google_privileged_access_manager_entitlement" "bq_admin" {
-  provider             = google-beta
-  entitlement_id       = "bq-admin-breakglass"
-  location             = "global"
-  parent               = "projects/${var.project_id}"
-  max_request_duration = var.pam_entitlement_duration
+# ─── Access level: corporate network + managed devices ───────────────────────
+resource "google_access_context_manager_access_level" "corp_network" {
+  parent = "accessPolicies/${google_access_context_manager_access_policy.pam_policy.name}"
+  name   = "accessPolicies/${google_access_context_manager_access_policy.pam_policy.name}/accessLevels/corp_network"
+  title  = "Corporate network and managed devices"
 
-  eligible_users {
-    principals = var.privileged_users
-  }
-
-  privileged_access {
-    gcp_iam_access {
-      resource      = "//cloudresourcemanager.googleapis.com/projects/${var.project_id}"
-      resource_type = "cloudresourcemanager.googleapis.com/Project"
-
-      role_bindings {
-        role = "roles/bigquery.admin"
-        # Optional: condition narrows the grant further at activation time
-        condition_expression = "request.time < timestamp('${timeadd(timestamp(), "1h")}')"
+  basic {
+    conditions {
+      ip_subnetworks = ["203.0.113.0/24"] # Replace with your corp CIDR
+      device_policy {
+        require_corp_owned      = true
+        require_screen_lock     = true
+        allowed_encryption_statuses = ["ENCRYPTED"]
       }
     }
   }
+}
 
-  approval_workflow {
-    manual_approvals {
-      require_approver_justification = true
-      steps {
-        approvals_needed          = 1
-        approver_email_recipients = var.admin_approvers
-        approvers {
-          principals = var.admin_approvers
+# ─── Service perimeter: protect sensitive APIs ────────────────────────────────
+resource "google_access_context_manager_service_perimeter" "pam_perimeter" {
+  parent = "accessPolicies/${google_access_context_manager_access_policy.pam_policy.name}"
+  name   = "accessPolicies/${google_access_context_manager_access_policy.pam_policy.name}/servicePerimeters/pam_perimeter"
+  title  = "PAM Protected Perimeter"
+
+  status {
+    resources = ["projects/${var.project_number}"]
+
+    restricted_services = [
+      "bigquery.googleapis.com",
+      "storage.googleapis.com",
+      "secretmanager.googleapis.com",
+      "sqladmin.googleapis.com",
+      "container.googleapis.com",
+    ]
+
+    access_levels = [
+      google_access_context_manager_access_level.corp_network.name
+    ]
+
+    ingress_policies {
+      ingress_from {
+        identity_type = "IDENTITY_TYPE_UNSPECIFIED"
+        identities    = var.privileged_users
+        sources {
+          access_level = google_access_context_manager_access_level.corp_network.name
+        }
+      }
+      ingress_to {
+        resources = ["*"]
+        operations {
+          service_name = "bigquery.googleapis.com"
+          method_selectors { method = "*" }
+        }
+        operations {
+          service_name = "secretmanager.googleapis.com"
+          method_selectors { method = "*" }
+        }
+      }
+    }
+
+    egress_policies {
+      egress_from {
+        identity_type = "IDENTITY_TYPE_UNSPECIFIED"
+        identities    = var.privileged_users
+      }
+      egress_to {
+        resources = ["*"]
+        operations {
+          service_name = "storage.googleapis.com"
+          method_selectors { method = "google.storage.objects.get" }
         }
       }
     }
   }
-
-  requester_justification_config {
-    unstructured {}
-  }
-
-  additional_notification_targets {
-    admin_email_recipients    = var.admin_approvers
-    requester_email_recipients = var.privileged_users
-  }
-
-  depends_on = [google_project_service.pam]
-}
-
-# ─── Entitlement: GKE cluster admin (no approval, 30 min) ────────────────────
-resource "google_privileged_access_manager_entitlement" "gke_admin" {
-  provider             = google-beta
-  entitlement_id       = "gke-cluster-admin-jit"
-  location             = "global"
-  parent               = "projects/${var.project_id}"
-  max_request_duration = "1800s" # 30 minutes
-
-  eligible_users {
-    principals = var.privileged_users
-  }
-
-  privileged_access {
-    gcp_iam_access {
-      resource      = "//cloudresourcemanager.googleapis.com/projects/${var.project_id}"
-      resource_type = "cloudresourcemanager.googleapis.com/Project"
-
-      role_bindings {
-        role = "roles/container.clusterAdmin"
-      }
-    }
-  }
-
-  # Auto-approve — but still logged and time-bounded
-  approval_workflow {
-    manual_approvals {
-      require_approver_justification = false
-      steps {
-        approvals_needed = 0
-        approvers {
-          principals = var.admin_approvers
-        }
-      }
-    }
-  }
-
-  requester_justification_config {
-    unstructured {}
-  }
-
-  depends_on = [google_project_service.pam]
-}
-
-# ─── Entitlement: Secret Manager accessor (requires justification) ────────────
-resource "google_privileged_access_manager_entitlement" "secret_accessor" {
-  provider             = google-beta
-  entitlement_id       = "secret-accessor-jit"
-  location             = "global"
-  parent               = "projects/${var.project_id}"
-  max_request_duration = "3600s"
-
-  eligible_users {
-    principals = var.privileged_users
-  }
-
-  privileged_access {
-    gcp_iam_access {
-      resource      = "//cloudresourcemanager.googleapis.com/projects/${var.project_id}"
-      resource_type = "cloudresourcemanager.googleapis.com/Project"
-
-      role_bindings {
-        role = "roles/secretmanager.secretAccessor"
-      }
-    }
-  }
-
-  approval_workflow {
-    manual_approvals {
-      require_approver_justification = true
-      steps {
-        approvals_needed          = 1
-        approver_email_recipients = var.admin_approvers
-        approvers {
-          principals = var.admin_approvers
-        }
-      }
-    }
-  }
-
-  requester_justification_config {
-    unstructured {}
-  }
-
-  depends_on = [google_project_service.pam]
 }
