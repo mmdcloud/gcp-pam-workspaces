@@ -11,6 +11,7 @@ variable "location" {
 variable "project_id" {
   description = "GCP Project ID"
   type        = string
+  default     = "encoded-alpha-457108-e8"
 }
 
 variable "project_number" {

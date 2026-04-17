@@ -13,16 +13,17 @@ module "iam" {
 }
 
 module "org_policy" {
-  source     = "./modules/org-policy"
-  org_id     = var.org_id
-  project_id = var.project_id
+  source      = "./modules/org-policy"
+  org_id      = var.org_id
+  customer_id = "C04bmrjdw"
+  project_id  = var.project_id
 }
 
 module "vpc_sc" {
-  source         = "./modules/vpc-sc"
-  org_id         = var.org_id
-  project_number = var.project_number
-  privileged_users         = var.privileged_users
+  source           = "./modules/vpc-sc"
+  org_id           = var.org_id
+  project_number   = var.project_number
+  privileged_users = var.privileged_users
 }
 
 module "audit" {

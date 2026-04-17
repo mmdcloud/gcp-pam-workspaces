@@ -7,7 +7,7 @@ resource "google_org_policy_policy" "restrict_resource_policies" {
     rules {
       values {
         allowed_values = [
-          "C0xxxxxxx" # your Google Workspace customer ID
+          var.customer_id 
         ]
       }
     }

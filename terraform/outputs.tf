@@ -1,9 +1,4 @@
-output "pam_bq_entitlement_id" {
-  description = "BigQuery admin PAM entitlement ID"
-  value       = module.pam.bq_entitlement_id
-}
-
-output "pam_gke_entitlement_id" {
+output "gke_entitlement_id" {
   description = "GKE admin PAM entitlement ID"
   value       = module.pam.gke_entitlement_id
 }
